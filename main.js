@@ -1,25 +1,29 @@
 import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
-let engine;
-const inputField = document.getElementById('inputField');
-const submitButton = document.getElementById('submitButton');
+let engine, inputField, submitButton, editableCode;
+
+function initializeElements() {
+    inputField = document.getElementById('in');
+    submitButton = document.getElementById('sub');
+    editableCode = document.getElementById('editable-code');
+}
 
 const messages = [
     { role: "system",
         content: `
-        You are an expert web developer helping the user change the website they are currently visiting.
+        You are an expert web developer helping the user change the current website.
         
-        Each message will be a JSON object of the form:
+        Each user message will be a JSON object of the form:
         {
-            "instructions": The user's instructions for what to change,
-            "html": The current HTML code for the webpage,
-            "css": The current CSS code for the webpage
+            "instructions": User's instructions for what to change,
+            "html": Current body HTML code,
+            "css": Current CSS code
         }
         
         Your response must be a JSON object of the form:
         {
-            "html": The new complete HTML code for the webpage based on the requested changes,
-            "css": The new complete CSS code for the webpage based on the requested changes
+            "html": New complete body HTML code based on the requested changes,
+            "css": New complete CSS code based on the requested changes
         }
 
         Do not return anything else.
@@ -30,7 +34,6 @@ const messages = [
 // Load model and initialize LLM engine
 async function loadModel() {
     const selectedModel = "Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC"
-    // const selectedModel = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
     try {
         console.log('Loading ' + selectedModel);
         engine = await webllm.CreateMLCEngine(
@@ -44,6 +47,8 @@ async function loadModel() {
 
 // Enable input and button after the model is loaded
 async function initializeApp() {
+    initializeElements();
+
     inputField.disabled = true;
     submitButton.disabled = true;
 
@@ -69,26 +74,28 @@ function getCSS() {
             console.warn("Couldn't read CSS rules.");
         }
     }
-    return cssText;
+    const cssTextCompressed = cssText.replace(/\s/g,'');
+    return cssTextCompressed;
 }
 
 // Function to generate a response from the AI model
 async function generateResponse() {
     let response;
 
-    inputField.disabled = true;
-    submitButton.disabled = true;
-
     const userInput = inputField.value.trim();
-    const userJson = {
-        instructions: userInput,
-        html: document.documentElement.outerHTML,
-        css: getCSS()
-    };
-    messages.push({ role: 'user', content: JSON.stringify(userJson)});
 
     if (userInput) {
+        const userJson = {
+            instructions: userInput,
+            html: editableCode.innerHTML,
+            css: getCSS()
+        };
+        messages.push({ role: 'user', content: JSON.stringify(userJson)});
+    
+        console.log(userJson);
         inputField.value = 'Working...';
+        inputField.disabled = true;
+        submitButton.disabled = true;
         try {
             // Generate response using Web-LLM
             const reply = await engine.chat.completions.create({
@@ -131,23 +138,32 @@ function applyChanges(response) {
     const newCss = code.css;
 
     // Update the HTML and CSS of the webpage
-    document.documentElement.innerHTML = newHtml;
+    editableCode.innerHTML = newHtml;
     const styleSheet = document.createElement('style');
     styleSheet.textContent = newCss;
     document.head.appendChild(styleSheet);
+
+    initializeElements();
 }
 
-// Event listener to handle user message submission
-submitButton.addEventListener('click', async () => {
+async function submitChanges(){
+    console.log("Submitting change...")
     const response = await generateResponse();
     if (response) {
         applyChanges(response);
     }
+}
+
+// Event delegation on document level or a stable parent element
+document.body.addEventListener('click', (event) => {
+    if (event.target && event.target.id === 'sub') { // checks for clicks on the submit button
+        submitChanges();
+    }
 });
 
-// Allow pressing Enter to send messages
-inputField.addEventListener('keypress', (event) => {
-    if (event.key === 'Enter') {
-        submitButton.click();
+// Event delegation on document level for pressing Enter
+document.body.addEventListener('keypress', (event) => {
+    if (event.target && event.target.id === 'in' && event.key === 'Enter') { // checks if the input is focused and Enter is pressed
+        submitChanges();
     }
 });
